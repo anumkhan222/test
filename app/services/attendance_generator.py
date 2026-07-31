@@ -2,15 +2,17 @@ from datetime import date, datetime, timedelta
 
 # convert time into hours so we can calculate late and overtime hours
 def _time_str_to_hours(time_str: str) -> float:
+     #Convert string into datetime object
     t = datetime.strptime(time_str, "%H:%M")
+     # Return total hours (including minutes)
     return t.hour + (t.minute / 60)
-
 
 #generate attendance record for each working day in the pay period
 def generate_daily_attendance_log(employee: dict, pay_period_start: date, pay_period_end: date):
 
     # get employee attendance data and attndance rules.
     events = employee["attendance_events"]
+    #get attendance policy
     policy = employee["salary_rule"]["attendance_policy"]
     standard_clock_in = policy["standard_clock_in"]
     standard_clock_out = policy["standard_clock_out"]

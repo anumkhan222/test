@@ -1,7 +1,6 @@
 from fastapi import FastAPI
 
-from app.routers import payroll
-
+from app.routers import payroll, company,company_settings
 app = FastAPI(
     title="Payroll Payload Generation API",
     description="Generates payroll payloads for employees based on "
@@ -10,7 +9,11 @@ app = FastAPI(
     version="1.0.0",
 )
 
+app.include_router(company.router)
+app.include_router(company_settings.router)
 app.include_router(payroll.router)
+
+
 @app.get("/")
 def root():
     return {"message": "Payroll Payload Generation API is running. "}
