@@ -1,6 +1,4 @@
-
-
-from typing import Dict, List, Optional
+from typing import List, Optional
 from pydantic import BaseModel, EmailStr, Field
 
 from app.models.enums import Department, SalaryType, PaymentMethod, AmountType, PayrollCycle
@@ -16,18 +14,6 @@ class AllowanceRule(BaseModel):
     allowance_type: str = Field(..., description="e.g. 'Pick and Drop', 'Expenses' — free text, company-configurable")
     amount_type: AmountType
     amount: float = Field(..., description="If Fixed: a flat amount. If Percentage: a % of gross salary.")
-
-
-class AttendanceEvents(BaseModel):
-
-    leave_dates: List[str] = Field(default_factory=list, description="Dates on approved leave, 'YYYY-MM-DD'")
-    absent_dates: List[str] = Field(default_factory=list, description="Dates of unapproved absence, 'YYYY-MM-DD'")
-    late_clock_ins: Dict[str, str] = Field(
-        default_factory=dict, description="{'YYYY-MM-DD': 'HH:MM'} — actual (late) clock-in time on that date"
-    )
-    overtime_clock_outs: Dict[str, str] = Field(
-        default_factory=dict, description="{'YYYY-MM-DD': 'HH:MM'} — actual (late) clock-out time on that date"
-    )
 
 
 class SalaryRule(BaseModel):
@@ -54,11 +40,9 @@ class EmployeeCreateRequest(BaseModel):
     salary_rule: SalaryRule
     deduction_rules: List[DeductionRule] = Field(default_factory=list)
     allowance_rules: List[AllowanceRule] = Field(default_factory=list)
-    attendance_events: AttendanceEvents = Field(default_factory=AttendanceEvents)
 
 
 class EmployeeUpdateRequest(BaseModel):
-
     emp_name: Optional[str] = None
     email: Optional[EmailStr] = None
     profile_image: Optional[str] = None
@@ -68,7 +52,6 @@ class EmployeeUpdateRequest(BaseModel):
     salary_rule: Optional[SalaryRule] = None
     deduction_rules: Optional[List[DeductionRule]] = None
     allowance_rules: Optional[List[AllowanceRule]] = None
-    attendance_events: Optional[AttendanceEvents] = None
 
 
 class EmployeeResponse(BaseModel):
@@ -83,6 +66,5 @@ class EmployeeResponse(BaseModel):
     salary_rule: SalaryRule
     deduction_rules: List[DeductionRule]
     allowance_rules: List[AllowanceRule]
-    attendance_events: AttendanceEvents
     created_at: str
     updated_at: str

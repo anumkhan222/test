@@ -1,5 +1,4 @@
 from datetime import date
-from app.services.attendance_generator import generate_attendance
 
 # calculate fixed or percentage amount
 def _calc_rule_amount(amount_type: str, amount: float, base: float):
@@ -251,23 +250,12 @@ def calculate_payroll(employee: dict, attendance: dict):
 
 
 # generte complete payroll response for one employee
-def generate_employee_payroll(
-    employee: dict,
-    pay_period_start: date,
-    pay_period_end: date,
-):
+# attendance is now a pre-fetched summary dict (from attendance_controller.get_attendance_summary),
+# not generated from the employee doc.
+def generate_employee_payroll(employee: dict, attendance: dict):
 
-    # generate attendance using employee data
-    attendance = generate_attendance(
-        employee,
-        pay_period_start,
-        pay_period_end,
-    )
-
-    # calculate payroll using employee and attendance 
     payroll = calculate_payroll(employee, attendance)
 
-    # return employee payroll response
     return {
         "emp_id": employee["emp_id"],
         "emp_name": employee["emp_name"],

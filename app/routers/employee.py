@@ -15,12 +15,21 @@ def create_employee(payload: EmployeeCreateRequest):
     return employee_controller.create_employee(payload)
 
 #list employees
-@router.get("/", response_model=List[EmployeeResponse] | EmployeeResponse)
+@router.get("/{company_id}", response_model=List[EmployeeResponse] | EmployeeResponse)
 def get_employees(
-    company_id: str = Query(..., description="Company ID"),
+    company_id: str,
     emp_id: Optional[str] = Query(None, description="Employee ID"),
+    department: Optional[str] = Query(None, description="Department"),
+    salary_type: Optional[str] = Query(None, description="Salary Type"),
+    pay_period: Optional[str] = Query(None, description="Pay Period"),
 ):
-    return employee_controller.get_employees(company_id, emp_id)
+    return employee_controller.get_employees(
+        company_id=company_id,
+        emp_id=emp_id,
+        department=department,
+        salary_type=salary_type,
+        pay_period=pay_period,
+    )
 
 #update an employees fields.
 @router.put("/{emp_id}", response_model=EmployeeResponse)
