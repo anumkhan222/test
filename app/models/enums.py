@@ -27,3 +27,27 @@ class BusinessSize(str, Enum):
 class PayrollCycle(str, Enum):
     MONTHLY = "Monthly"
     WEEKLY = "Weekly"
+
+
+
+class Department(str, Enum):
+    FRONTEND = "Frontend"
+    BACKEND = "Backend"
+    UI_UX = "UI/UX"
+    OTHER = "Other"
+
+
+class SalaryType(str, Enum):
+    MONTHLY = "Monthly"
+    HOURLY = "Hourly"
+
+
+class PaymentMethod(str, Enum):
+    BANK_TRANSFER = "Bank Transfer"
+    CASH = "Cash"
+    CHEQUE = "Cheque"
+
+
+class AmountType(str, Enum):
+    FIXED = "Fixed"
+    PERCENTAGE = "Percentage"

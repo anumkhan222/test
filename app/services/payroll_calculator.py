@@ -12,7 +12,7 @@ def generate_salary(employee: dict, attendance: dict):
 
     # get salary rules from employee data.
     rule = employee["salary_rule"]
-    policy = rule["attendance_policy"]
+    policy = rule
 
     base_salary = rule["base_salary"]
     present_days = attendance["present_days"]
@@ -83,7 +83,7 @@ def generate_attendance_deductions(
     hourly_rate: float,
 ):
 
-    policy = employee["salary_rule"]["attendance_policy"]
+    policy = employee["salary_rule"]
 
     # calculate paid leaves for the selected pay period.
     reference_days = (
