@@ -184,4 +184,14 @@ def delete_employee(emp_id: str) -> dict:
 
     return {
         "message": f"Employee '{emp_id}' deleted successfully"
-    }
+    } 
+    
+def get_employee_or_none(emp_id: str):
+    object_id = _to_object_id(emp_id)
+
+    doc = database.employees_collection.find_one({"_id": object_id})
+
+    if doc:
+        doc["emp_id"] = str(doc.pop("_id"))
+
+    return doc

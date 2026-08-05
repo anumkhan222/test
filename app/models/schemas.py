@@ -58,11 +58,10 @@ class PayrollComponent(BaseModel):
 class AttendanceSummary(BaseModel):
     working_days: int
     present_days: int
-    leaves: int
     absent_days: int
+    paid_leaves_allowed: int
     overtime_hours: float
     late_arrival_hours: float
-
 
 class EmployeePayroll(BaseModel):
     emp_id: str
@@ -79,6 +78,7 @@ class EmployeePayroll(BaseModel):
     total_deductions: float
     total_allowance: float
     net_salary: float
+    deduction_shortfall: float
 
 
 class GeneratePayrollResponse(BaseModel):

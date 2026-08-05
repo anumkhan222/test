@@ -75,6 +75,7 @@ def generate_allowances(employee: dict, gross_salary: float):
 
 
 # calcluate attendance related deduction.
+
 def generate_attendance_deductions(
     employee: dict,
     attendance: dict,
@@ -84,7 +85,6 @@ def generate_attendance_deductions(
 
     policy = employee["salary_rule"]
 
-    # calculate paid leaves for the selected pay period.
     reference_days = (
         policy.get("standard_working_days_per_month")
         or attendance["working_days"]
@@ -96,22 +96,15 @@ def generate_attendance_deductions(
         * (attendance["working_days"] / reference_days)
     )
 
-    # Calculate leave deduction
-    unpaid_days = max(
-        0,
-        (attendance["leaves"] + attendance["absent_days"])
-        - paid_leaves_allowed,
-    )
-
+    unpaid_days = max(0, attendance["absent_days"] - paid_leaves_allowed)
     leave_deduction = round(unpaid_days * per_day_rate, 2)
 
-    # caalculate late arrival deduction
     late_arrival_deduction = round(
         attendance["late_arrival_hours"] * hourly_rate,
         2,
     )
 
-    return leave_deduction, late_arrival_deduction
+    return leave_deduction, late_arrival_deduction, paid_leaves_allowed
 
 
 # calculate deduction rules like tax or UIF.
@@ -141,103 +134,50 @@ def generate_deduction_rules(employee: dict, gross_salary: float):
 # calculate complete payroll for an employee
 def calculate_payroll(employee: dict, attendance: dict):
 
-    #Calculate salary values
-    basic_salary, overtime_pay, per_day_rate, hourly_rate = generate_salary(
-        employee,
-        attendance,
+    basic_salary, overtime_pay, per_day_rate, hourly_rate = generate_salary(employee, attendance)
+
+    leave_deduction, late_arrival_deduction, paid_leaves_allowed = generate_attendance_deductions(
+        employee, attendance, per_day_rate, hourly_rate,
     )
 
-    #calculate attendance deductions
-    leave_deduction, late_arrival_deduction = (
-        generate_attendance_deductions(
-            employee,
-            attendance,
-            per_day_rate,
-            hourly_rate,
-        )
-    )
-
-    # calculate gross salary
     gross_salary = round(basic_salary + overtime_pay, 2)
 
-    include_allowance_overtime = employee["salary_rule"][
-        "include_allowance_and_overtime_in_payroll"
-    ]
+    include_allowance_overtime = employee["salary_rule"]["include_allowance_and_overtime_in_payroll"]
 
     payroll_calculation = [
-        {
-            "component": "Basic Salary",
-            "type": "Earnings",
-            "amount": basic_salary,
-        }
+        {"component": "Basic Salary", "type": "Earnings", "amount": basic_salary}
     ]
 
-    # add overtime if enabled
     if include_allowance_overtime and overtime_pay:
-        payroll_calculation.append(
-            {
-                "component": "Overtime Pay",
-                "type": "Earnings",
-                "amount": overtime_pay,
-            }
-        )
+        payroll_calculation.append({"component": "Overtime Pay", "type": "Earnings", "amount": overtime_pay})
 
     allowance_items = []
-
-    # add allowances if enabled.
     if include_allowance_overtime:
         allowance_items = generate_allowances(employee, gross_salary)
         payroll_calculation.extend(allowance_items)
 
-    # add attendance deductions.
     if leave_deduction:
-        payroll_calculation.append(
-            {
-                "component": "Leave Deduction",
-                "type": "Deduction",
-                "amount": leave_deduction,
-            }
-        )
+        payroll_calculation.append({"component": "Leave Deduction", "type": "Deduction", "amount": leave_deduction})
 
     if late_arrival_deduction:
-        payroll_calculation.append(
-            {
-                "component": "Late Arrivals",
-                "type": "Deduction",
-                "amount": late_arrival_deduction,
-            }
-        )
+        payroll_calculation.append({"component": "Late Arrivals", "type": "Deduction", "amount": late_arrival_deduction})
 
-    # add deduction rules.
     rule_deductions = generate_deduction_rules(employee, gross_salary)
     payroll_calculation.extend(rule_deductions)
 
-    # calculate totals
     total_earnings = round(
-        sum(
-            item["amount"]
-            for item in payroll_calculation
-            if item["type"] == "Earnings"
-        ),
-        2,
+        sum(item["amount"] for item in payroll_calculation if item["type"] == "Earnings"), 2
     )
 
     total_deductions = round(
-        leave_deduction
-        + late_arrival_deduction
-        + sum(item["amount"] for item in rule_deductions),
-        2,
+        leave_deduction + late_arrival_deduction + sum(item["amount"] for item in rule_deductions), 2
     )
 
-    total_allowance = round(
-        sum(item["amount"] for item in allowance_items),
-        2,
-    )
+    total_allowance = round(sum(item["amount"] for item in allowance_items), 2)
 
-    net_salary = round(
-        total_earnings - total_deductions,
-        2,
-    )
+    raw_net_salary = round(total_earnings - total_deductions, 2)
+    net_salary = max(0.0, raw_net_salary)
+    deduction_shortfall = round(abs(min(0.0, raw_net_salary)), 2)
 
     return {
         "payroll_calculation": payroll_calculation,
@@ -246,12 +186,13 @@ def calculate_payroll(employee: dict, attendance: dict):
         "total_deductions": total_deductions,
         "total_allowance": total_allowance,
         "net_salary": net_salary,
+        "deduction_shortfall": deduction_shortfall,
+        "paid_leaves_allowed": paid_leaves_allowed,
     }
 
 
-# generte complete payroll response for one employee
-# attendance is now a pre-fetched summary dict (from attendance_controller.get_attendance_summary),
-# not generated from the employee doc.
+
+# generate complete payroll response for one employee 
 def generate_employee_payroll(employee: dict, attendance: dict):
 
     payroll = calculate_payroll(employee, attendance)
@@ -268,8 +209,8 @@ def generate_employee_payroll(employee: dict, attendance: dict):
         "attendance_summary": {
             "working_days": attendance["working_days"],
             "present_days": attendance["present_days"],
-            "leaves": attendance["leaves"],
             "absent_days": attendance["absent_days"],
+            "paid_leaves_allowed": payroll["paid_leaves_allowed"],
             "overtime_hours": attendance["overtime_hours"],
             "late_arrival_hours": attendance["late_arrival_hours"],
         },
@@ -278,4 +219,5 @@ def generate_employee_payroll(employee: dict, attendance: dict):
         "total_deductions": payroll["total_deductions"],
         "total_allowance": payroll["total_allowance"],
         "net_salary": payroll["net_salary"],
+        "deduction_shortfall": payroll["deduction_shortfall"],
     }

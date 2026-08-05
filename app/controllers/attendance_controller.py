@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta, timezone
+import date, datetime, timedelta, timezone
 
 from bson import ObjectId
 from bson.errors import InvalidId
@@ -19,12 +19,12 @@ def _to_object_id(attendance_id: str) -> ObjectId:
     except (InvalidId, TypeError):
         raise HTTPException(status_code=400, detail=f"'{attendance_id}' is not a valid attendance_id")
 
-# convert time into hours for calculation
+
 def _time_str_to_hours(time_str: str) -> float:
     t = datetime.strptime(time_str, "%H:%M")
     return t.hour + (t.minute / 60)
 
-# calculate late and overtime hours
+
 def _calc_late_and_overtime(employee: dict, clock_in: str, clock_out: str):
     policy = employee["salary_rule"]
     standard_clock_in = policy.get("standard_clock_in") or "09:00"
@@ -34,7 +34,7 @@ def _calc_late_and_overtime(employee: dict, clock_in: str, clock_out: str):
     overtime_hours = max(0.0, round(_time_str_to_hours(clock_out) - _time_str_to_hours(standard_clock_out), 2))
     return late_hours, overtime_hours
 
-# create an attendance record
+
 def _build_record(employee: dict, company_id: str, date_str: str, clock_in: str, clock_out: str) -> dict:
     late_hours, overtime_hours = _calc_late_and_overtime(employee, clock_in, clock_out)
     now = datetime.now(timezone.utc).isoformat()
@@ -50,7 +50,6 @@ def _build_record(employee: dict, company_id: str, date_str: str, clock_in: str,
         "created_at": now,
         "updated_at": now,
     }
-
 
 
 def mark_attendance(payload: AttendanceCreateRequest) -> dict:
@@ -77,7 +76,6 @@ def mark_attendance(payload: AttendanceCreateRequest) -> dict:
     return doc
 
 
-# mark attendance for many employees on the same date in one call
 def mark_bulk_attendance(payload: BulkAttendanceCreateRequest) -> dict:
 
     date_str = payload.date.isoformat()
@@ -134,22 +132,29 @@ def update_attendance(attendance_id: str, payload: AttendanceUpdateRequest) -> d
     if employee is None:
         raise HTTPException(status_code=404, detail=f"Employee '{existing['emp_id']}' not found")
 
-    clock_in = payload.clock_in if payload.clock_in is not None else existing["clock_in"]
-    clock_out = payload.clock_out if payload.clock_out is not None else existing["clock_out"]
+    update_fields = {}
 
-    late_hours, overtime_hours = _calc_late_and_overtime(employee, clock_in, clock_out)
+    if payload.clock_in is not None:
+        update_fields["clock_in"] = payload.clock_in
 
-    update_fields = {
-        "clock_in": clock_in,
-        "clock_out": clock_out,
-        "late_hours": late_hours,
-        "overtime_hours": overtime_hours,
-        "updated_at": datetime.now(timezone.utc).isoformat(),
-    }
+    if payload.clock_out is not None:
+        update_fields["clock_out"] = payload.clock_out
+
+    if payload.clock_in is not None or payload.clock_out is not None:
+        clock_in = update_fields.get("clock_in", existing["clock_in"])
+        clock_out = update_fields.get("clock_out", existing["clock_out"])
+
+        late_hours, overtime_hours = _calc_late_and_overtime(employee, clock_in, clock_out)
+        update_fields["late_hours"] = late_hours
+        update_fields["overtime_hours"] = overtime_hours
+
+    if not update_fields:
+        return existing  
+
+    update_fields["updated_at"] = datetime.now(timezone.utc).isoformat()
 
     database.attendance_collection.update_one({"_id": _to_object_id(attendance_id)}, {"$set": update_fields})
     return get_attendance_record(attendance_id)
-
 
 def delete_attendance(attendance_id: str) -> dict:
     get_attendance_record(attendance_id)
@@ -160,7 +165,6 @@ def delete_attendance(attendance_id: str) -> dict:
 def _count_weekdays(start: date, end: date) -> int:
     total_days = (end - start).days + 1
     return sum(1 for i in range(total_days) if (start + timedelta(days=i)).weekday() < 5)
-
 
 
 def get_attendance_summary(emp_id: str, pay_period_start: date, pay_period_end: date) -> dict:
@@ -190,9 +194,7 @@ def get_attendance_summary(emp_id: str, pay_period_start: date, pay_period_end: 
     result = list(database.attendance_collection.aggregate(pipeline))
 
     if not result:
-        present_days = 0
-        overtime_hours = 0.0
-        late_arrival_hours = 0.0
+        present_days, overtime_hours, late_arrival_hours = 0, 0.0, 0.0
     else:
         present_days = result[0]["present_days"]
         overtime_hours = round(result[0]["overtime_hours"], 2)
