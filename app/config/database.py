@@ -14,4 +14,7 @@ company_settings_collection = db["company_settings"]
 employees_collection = db["employees"]
 attendance_collection = db["attendance"]
 payrolls_collection = db["payrolls"]
-attendance_collection.create_index([("emp_id", 1), ("date", 1)])
+attendance_collection.create_index(
+    [("emp_id", 1), ("date", 1)],
+    unique=True
+)
