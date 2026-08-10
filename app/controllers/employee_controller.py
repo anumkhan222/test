@@ -109,43 +109,30 @@ def get_employees(
     return docs
 
 
-def update_employee(emp_id: str, payload: EmployeeUpdateRequest) -> dict:
+def update_employee(emp_id: str, payload: EmployeeUpdateRequest, company_id: str) -> dict:
 
     existing = get_employee_or_none(emp_id)
     if existing is None or existing["company_id"] != company_id:
         raise HTTPException(status_code=404, detail=f"Employee '{emp_id}' not found")
 
     update_fields = {}
-    if payload.emp_name is not None:
-        update_fields["emp_name"] = payload.emp_name
-    if payload.email is not None:
-        update_fields["email"] = payload.email
-    if payload.profile_image is not None:
-        update_fields["profile_image"] = payload.profile_image
-    if payload.department is not None:
-        update_fields["department"] = payload.department.value
-    if payload.designation is not None:
-        update_fields["designation"] = payload.designation
-    if payload.salary_type is not None:
-        update_fields["salary_type"] = payload.salary_type.value
-
-    # THE FIX: merge only the fields actually sent onto the existing salary_rule,
-    # instead of replacing the whole sub-document.
     if payload.salary_rule is not None:
         existing_salary_rule = existing.get("salary_rule", {})
         changed_fields = payload.salary_rule.model_dump(mode="json", exclude_none=True)
         update_fields["salary_rule"] = {**existing_salary_rule, **changed_fields}
-
-    if payload.deduction_rules is not None:
-        update_fields["deduction_rules"] = [d.model_dump(mode="json") for d in payload.deduction_rules]
-    if payload.allowance_rules is not None:
-        update_fields["allowance_rules"] = [a.model_dump(mode="json") for a in payload.allowance_rules]
+   
 
     update_fields["updated_at"] = datetime.now(timezone.utc).isoformat()
-
     database.employees_collection.update_one({"_id": _to_object_id(emp_id)}, {"$set": update_fields})
-    return get_employees(company_id=existing["company_id"],
-    emp_id=emp_id,)
+    return get_employees(company_id, emp_id)
+
+
+def delete_employee(emp_id: str, company_id: str) -> dict:
+    existing = get_employee_or_none(emp_id)
+    if existing is None or existing["company_id"] != company_id:
+        raise HTTPException(status_code=404, detail=f"Employee '{emp_id}' not found")
+    database.employees_collection.delete_one({"_id": _to_object_id(emp_id)})
+    return {"message": f"Employee '{emp_id}' deleted successfully"}
 
 def delete_employee(emp_id: str, company_id: str) -> dict:
     existing = get_employee_or_none(emp_id)

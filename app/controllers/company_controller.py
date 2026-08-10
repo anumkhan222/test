@@ -150,8 +150,6 @@ def update_settings(company_id: str, payload: CompanySettingsUpdateRequest) -> d
         update_fields["allow_overtime"] = payload.allow_overtime
     if payload.overtime_rate_multiplier is not None:
         update_fields["overtime_rate_multiplier"] = payload.overtime_rate_multiplier
-    if payload.standard_working_days_per_week is not None:
-        update_fields["standard_working_days_per_week"] = payload.standard_working_days_per_week
     if payload.standard_working_hours_per_day is not None:
         update_fields["standard_working_hours_per_day"] = payload.standard_working_hours_per_day
     if payload.standard_clock_in is not None:
