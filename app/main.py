@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 
-from app.routers import payroll, company,employee,attendance
+from app.routers import payroll, company,employee,attendance,auth
 app = FastAPI(
     title="Payroll Payload Generation API",
     description="Generates payroll payloads for employees based on "
@@ -9,6 +9,7 @@ app = FastAPI(
     version="1.0.0",
 )
 
+app.include_router(auth.router)
 app.include_router(company.router)
 app.include_router(employee.router)
 app.include_router(attendance.router)

@@ -1,20 +1,57 @@
 from datetime import date as date_type
-from typing import List, Optional
+from typing import List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+from app.utils.time_utils import time_str_to_minutes
+
+AttendanceStatus = Literal["Present", "Absent", "Leave"]
+
+
+class ClockSession(BaseModel):
+    clock_in: str = Field(..., description="'HH:MM'")
+    clock_out: str = Field(..., description="'HH:MM'")
+
+    @model_validator(mode="after")
+    def validate_order(self):
+        if time_str_to_minutes(self.clock_out) <= time_str_to_minutes(self.clock_in):
+            raise ValueError("clock_out must be after clock_in")
+        return self
+
+
+def _validate_sessions_chronological(sessions: List[ClockSession]):
+    for i in range(1, len(sessions)):
+        if time_str_to_minutes(sessions[i].clock_in) < time_str_to_minutes(sessions[i - 1].clock_out):
+            raise ValueError("clock_sessions must be chronological and non-overlapping")
 
 
 class AttendanceCreateRequest(BaseModel):
-    emp_id: str = Field(..., description="Employee this record belongs to")
-    company_id: str = Field(..., description="Must match the employee's company_id")
-    date: date_type = Field(..., description="The calendar date this record is for")
-    clock_in: str = Field(..., description="'HH:MM' actual clock-in time")
-    clock_out: str = Field(..., description="'HH:MM' actual clock-out time")
+    emp_id: str
+    # company_id removed — always taken from the logged-in user's token
+    date: date_type
+    status: AttendanceStatus
+    clock_sessions: List[ClockSession] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_sessions_match_status(self):
+        if self.status == "Present":
+            if not self.clock_sessions:
+                raise ValueError("clock_sessions is required when status is 'Present'")
+            _validate_sessions_chronological(self.clock_sessions)
+        elif self.clock_sessions:
+            raise ValueError("clock_sessions must be empty when status is not 'Present'")
+        return self
 
 
 class AttendanceUpdateRequest(BaseModel):
-    clock_in: Optional[str] = None
-    clock_out: Optional[str] = None
+    status: Optional[AttendanceStatus] = None
+    clock_sessions: Optional[List[ClockSession]] = None
+
+    @model_validator(mode="after")
+    def validate_sessions_chronological(self):
+        if self.clock_sessions:
+            _validate_sessions_chronological(self.clock_sessions)
+        return self
 
 
 class AttendanceResponse(BaseModel):
@@ -22,21 +59,32 @@ class AttendanceResponse(BaseModel):
     emp_id: str
     company_id: str
     date: str
-    clock_in: str
-    clock_out: str
-    late_hours: float
-    overtime_hours: float
+    status: AttendanceStatus
+    clock_sessions: List[ClockSession] = Field(default_factory=list)
+    total_hours_worked: float = 0.0
+    late_hours: float = 0.0
+    overtime_hours: float = 0.0
     created_at: str
     updated_at: str
 
 
 class BulkAttendanceItem(BaseModel):
     emp_id: str
-    clock_in: str
-    clock_out: str
+    status: AttendanceStatus
+    clock_sessions: List[ClockSession] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_sessions_match_status(self):
+        if self.status == "Present":
+            if not self.clock_sessions:
+                raise ValueError("clock_sessions is required when status is 'Present'")
+            _validate_sessions_chronological(self.clock_sessions)
+        elif self.clock_sessions:
+            raise ValueError("clock_sessions must be empty when status is not 'Present'")
+        return self
 
 
 class BulkAttendanceCreateRequest(BaseModel):
-    company_id: str
-    date: date_type = Field(..., description="The calendar date these records are for")
+    # company_id removed — always taken from the logged-in user's token
+    date: date_type
     records: List[BulkAttendanceItem] = Field(..., min_length=1)

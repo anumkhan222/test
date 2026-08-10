@@ -19,7 +19,11 @@ def _to_object_id(company_id: str) -> ObjectId:
         raise HTTPException(status_code=400, detail=f"'{company_id}' is not a valid company_id")
 
 #create a new company and save it in the database
-def create_company(payload: CompanyCreateRequest) -> dict:
+def create_company(payload: CompanyCreateRequest, owner_user_id: str) -> dict:
+
+    owner = database.users_collection.find_one({"_id": ObjectId(owner_user_id)})
+    if owner and owner.get("company_id"):
+        raise HTTPException(status_code=409, detail="You already have a company. Use PUT to update it.")
 
     now = datetime.now(timezone.utc).isoformat()
 
@@ -27,11 +31,21 @@ def create_company(payload: CompanyCreateRequest) -> dict:
     company_doc["created_at"] = now
     company_doc["updated_at"] = now
 
-    database.companies_collection.insert_one(company_doc)  # fills in company_doc["_id"]
-
+    database.companies_collection.insert_one(company_doc)
     company_doc["company_id"] = str(company_doc.pop("_id"))
+
+    database.users_collection.update_one(
+        {"_id": ObjectId(owner_user_id)},
+        {"$set": {"company_id": company_doc["company_id"]}},
+    )
+
     return company_doc
 
+
+def ensure_owns_company(current_user: dict, company_id: str) -> None:
+    if current_user.get("company_id") != company_id:
+        raise HTTPException(status_code=403, detail="You do not have access to this company")
+    
 #get one company or all companies from the database
 def get_company(company_id: Optional[str] = None):
 
@@ -55,36 +69,36 @@ def get_company(company_id: Optional[str] = None):
     return docs
 
 #update an existing companys details
-def update_company(company_id: str, payload: CompanyUpdateRequest) -> dict:
+def update_settings(company_id: str, payload: CompanySettingsUpdateRequest) -> dict:
 
-    get_company(company_id)  
+    get_settings(company_id)
 
     update_fields = {}
-    if payload.logo_url is not None:
-        update_fields["logo_url"] = payload.logo_url
-    if payload.business_name is not None:
-        update_fields["business_name"] = payload.business_name
-    if payload.business_type is not None:
-        update_fields["business_type"] = payload.business_type.value
-    if payload.business_size is not None:
-        update_fields["business_size"] = payload.business_size.value
-    if payload.about is not None:
-        update_fields["about"] = payload.about
-    if payload.business_email is not None:
-        update_fields["business_email"] = payload.business_email
-    if payload.phone_country_code is not None:
-        update_fields["phone_country_code"] = payload.phone_country_code
-    if payload.phone_number is not None:
-        update_fields["phone_number"] = payload.phone_number
-    if payload.business_url is not None:
-        update_fields["business_url"] = payload.business_url
-    if payload.social_links is not None:
-        update_fields["social_links"] = payload.social_links.model_dump()
+    if payload.salary_payment_day is not None:
+        update_fields["salary_payment_day"] = payload.salary_payment_day
+    if payload.allow_overtime is not None:
+        update_fields["allow_overtime"] = payload.allow_overtime
+    if payload.overtime_rate_multiplier is not None:
+        update_fields["overtime_rate_multiplier"] = payload.overtime_rate_multiplier
+    if payload.standard_working_hours_per_day is not None:
+        update_fields["standard_working_hours_per_day"] = payload.standard_working_hours_per_day
+    if payload.standard_clock_in is not None:
+        update_fields["standard_clock_in"] = payload.standard_clock_in
+    if payload.standard_clock_out is not None:
+        update_fields["standard_clock_out"] = payload.standard_clock_out
+    if payload.weekend_days is not None:
+        update_fields["weekend_days"] = payload.weekend_days
+    if payload.paid_leaves_allowed_per_month is not None:
+        update_fields["paid_leaves_allowed_per_month"] = payload.paid_leaves_allowed_per_month
+    if payload.late_arrival_grace_minutes is not None:
+        update_fields["late_arrival_grace_minutes"] = payload.late_arrival_grace_minutes
+    if payload.default_payroll_cycle is not None:
+        update_fields["default_payroll_cycle"] = payload.default_payroll_cycle.value
 
     update_fields["updated_at"] = datetime.now(timezone.utc).isoformat()
 
-    database.companies_collection.update_one({"_id": _to_object_id(company_id)}, {"$set": update_fields})
-    return get_company(company_id)
+    database.company_settings_collection.update_one({"company_id": company_id}, {"$set": update_fields})
+    return get_settings(company_id)
 
 #delete a company and its settings
 def delete_company(company_id: str) -> dict:

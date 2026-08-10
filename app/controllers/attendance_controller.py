@@ -1,4 +1,5 @@
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
+
 from bson import ObjectId
 from bson.errors import InvalidId
 from fastapi import HTTPException
@@ -10,6 +11,7 @@ from app.models.attendance_schema import (
     AttendanceUpdateRequest,
     BulkAttendanceCreateRequest,
 )
+from app.utils.time_utils import time_str_to_hours, count_working_days
 
 
 def _to_object_id(attendance_id: str) -> ObjectId:
@@ -19,31 +21,37 @@ def _to_object_id(attendance_id: str) -> ObjectId:
         raise HTTPException(status_code=400, detail=f"'{attendance_id}' is not a valid attendance_id")
 
 
-def _time_str_to_hours(time_str: str) -> float:
-    t = datetime.strptime(time_str, "%H:%M")
-    return t.hour + (t.minute / 60)
+def _calc_hours(employee: dict, status: str, clock_sessions: list):
+    if status != "Present" or not clock_sessions:
+        return 0.0, 0.0, 0.0
 
-
-def _calc_late_and_overtime(employee: dict, clock_in: str, clock_out: str):
     policy = employee["salary_rule"]
     standard_clock_in = policy.get("standard_clock_in") or "09:00"
     standard_clock_out = policy.get("standard_clock_out") or "18:00"
 
-    late_hours = max(0.0, round(_time_str_to_hours(clock_in) - _time_str_to_hours(standard_clock_in), 2))
-    overtime_hours = max(0.0, round(_time_str_to_hours(clock_out) - _time_str_to_hours(standard_clock_out), 2))
-    return late_hours, overtime_hours
+    first_clock_in = clock_sessions[0]["clock_in"]
+    last_clock_out = clock_sessions[-1]["clock_out"]
+
+    total_hours_worked = round(
+        sum(time_str_to_hours(s["clock_out"]) - time_str_to_hours(s["clock_in"]) for s in clock_sessions), 2
+    )
+    late_hours = max(0.0, round(time_str_to_hours(first_clock_in) - time_str_to_hours(standard_clock_in), 2))
+    overtime_hours = max(0.0, round(time_str_to_hours(last_clock_out) - time_str_to_hours(standard_clock_out), 2))
+
+    return total_hours_worked, late_hours, overtime_hours
 
 
-def _build_record(employee: dict, company_id: str, date_str: str, clock_in: str, clock_out: str) -> dict:
-    late_hours, overtime_hours = _calc_late_and_overtime(employee, clock_in, clock_out)
+def _build_record(employee: dict, company_id: str, date_str: str, status: str, clock_sessions: list) -> dict:
+    total_hours_worked, late_hours, overtime_hours = _calc_hours(employee, status, clock_sessions)
     now = datetime.now(timezone.utc).isoformat()
 
     return {
         "emp_id": employee["emp_id"],
         "company_id": company_id,
         "date": date_str,
-        "clock_in": clock_in,
-        "clock_out": clock_out,
+        "status": status,
+        "clock_sessions": clock_sessions,
+        "total_hours_worked": total_hours_worked,
         "late_hours": late_hours,
         "overtime_hours": overtime_hours,
         "created_at": now,
@@ -51,14 +59,12 @@ def _build_record(employee: dict, company_id: str, date_str: str, clock_in: str,
     }
 
 
-def mark_attendance(payload: AttendanceCreateRequest) -> dict:
+# mark attendance for one employee on one date. company_id comes from the logged-in
+def mark_attendance(payload: AttendanceCreateRequest, company_id: str) -> dict:
 
     employee = employee_controller.get_employee_or_none(payload.emp_id)
-    if employee is None:
-        raise HTTPException(status_code=404, detail=f"Employee '{payload.emp_id}' not found")
-
-    if employee["company_id"] != payload.company_id:
-        raise HTTPException(status_code=400, detail="Employee does not belong to the given company_id")
+    if employee is None or employee["company_id"] != company_id:
+        raise HTTPException(status_code=404, detail=f"Employee '{payload.emp_id}' not found in your company")
 
     date_str = payload.date.isoformat()
 
@@ -68,35 +74,32 @@ def mark_attendance(payload: AttendanceCreateRequest) -> dict:
             detail=f"Attendance for employee '{payload.emp_id}' on '{date_str}' already exists. Use PUT to update it.",
         )
 
-    doc = _build_record(employee, payload.company_id, date_str, payload.clock_in, payload.clock_out)
+    clock_sessions = [s.model_dump(mode="json") for s in payload.clock_sessions]
+    doc = _build_record(employee, company_id, date_str, payload.status, clock_sessions)
 
     database.attendance_collection.insert_one(doc)
     doc["attendance_id"] = str(doc.pop("_id"))
     return doc
 
 
-def mark_bulk_attendance(payload: BulkAttendanceCreateRequest) -> dict:
+def mark_bulk_attendance(payload: BulkAttendanceCreateRequest, company_id: str) -> dict:
 
     date_str = payload.date.isoformat()
-    created = []
-    skipped = []
+    created, skipped = [], []
 
     for item in payload.records:
         employee = employee_controller.get_employee_or_none(item.emp_id)
 
-        if employee is None:
-            skipped.append({"emp_id": item.emp_id, "reason": "Employee not found"})
-            continue
-
-        if employee["company_id"] != payload.company_id:
-            skipped.append({"emp_id": item.emp_id, "reason": "Employee does not belong to this company_id"})
+        if employee is None or employee["company_id"] != company_id:
+            skipped.append({"emp_id": item.emp_id, "reason": "Employee not found in your company"})
             continue
 
         if database.attendance_collection.find_one({"emp_id": item.emp_id, "date": date_str}):
             skipped.append({"emp_id": item.emp_id, "reason": "Attendance already exists for this date"})
             continue
 
-        doc = _build_record(employee, payload.company_id, date_str, item.clock_in, item.clock_out)
+        clock_sessions = [s.model_dump(mode="json") for s in item.clock_sessions]
+        doc = _build_record(employee, company_id, date_str, item.status, clock_sessions)
         database.attendance_collection.insert_one(doc)
         doc["attendance_id"] = str(doc.pop("_id"))
         created.append(doc)
@@ -104,106 +107,107 @@ def mark_bulk_attendance(payload: BulkAttendanceCreateRequest) -> dict:
     return {"created": created, "skipped": skipped}
 
 
-def get_attendance_record(attendance_id: str) -> dict:
+def get_attendance_record(attendance_id: str, company_id: str) -> dict:
     doc = database.attendance_collection.find_one({"_id": _to_object_id(attendance_id)})
-    if not doc:
+    if not doc or doc["company_id"] != company_id:
         raise HTTPException(status_code=404, detail="Attendance record not found")
     doc["attendance_id"] = str(doc.pop("_id"))
     return doc
 
 
-def list_attendance(emp_id: str, start: date | None = None, end: date | None = None) -> list:
-    query = {"emp_id": emp_id}
+def list_attendance(emp_id: str, company_id: str, start: date | None = None, end: date | None = None) -> list:
+    query = {"emp_id": emp_id, "company_id": company_id}
     if start and end:
         query["date"] = {"$gte": start.isoformat(), "$lte": end.isoformat()}
-
     docs = list(database.attendance_collection.find(query).sort("date", 1))
     for doc in docs:
         doc["attendance_id"] = str(doc.pop("_id"))
     return docs
 
 
-def update_attendance(attendance_id: str, payload: AttendanceUpdateRequest) -> dict:
+def update_attendance(attendance_id: str, payload: AttendanceUpdateRequest, company_id: str) -> dict:
 
-    existing = get_attendance_record(attendance_id)
+    existing = get_attendance_record(attendance_id, company_id)
 
     employee = employee_controller.get_employee_or_none(existing["emp_id"])
     if employee is None:
         raise HTTPException(status_code=404, detail=f"Employee '{existing['emp_id']}' not found")
 
-    update_fields = {}
+    status = payload.status if payload.status is not None else existing["status"]
 
-    if payload.clock_in is not None:
-        update_fields["clock_in"] = payload.clock_in
+    if payload.clock_sessions is not None:
+        clock_sessions = [s.model_dump(mode="json") for s in payload.clock_sessions]
+    else:
+        clock_sessions = existing.get("clock_sessions", [])
 
-    if payload.clock_out is not None:
-        update_fields["clock_out"] = payload.clock_out
+    if status != "Present":
+        clock_sessions = []
+    elif not clock_sessions:
+        raise HTTPException(status_code=400, detail="clock_sessions is required when status is 'Present'")
 
-    if payload.clock_in is not None or payload.clock_out is not None:
-        clock_in = update_fields.get("clock_in", existing["clock_in"])
-        clock_out = update_fields.get("clock_out", existing["clock_out"])
+    total_hours_worked, late_hours, overtime_hours = _calc_hours(employee, status, clock_sessions)
 
-        late_hours, overtime_hours = _calc_late_and_overtime(employee, clock_in, clock_out)
-        update_fields["late_hours"] = late_hours
-        update_fields["overtime_hours"] = overtime_hours
-
-    if not update_fields:
-        return existing  
-
-    update_fields["updated_at"] = datetime.now(timezone.utc).isoformat()
+    update_fields = {
+        "status": status,
+        "clock_sessions": clock_sessions,
+        "total_hours_worked": total_hours_worked,
+        "late_hours": late_hours,
+        "overtime_hours": overtime_hours,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
 
     database.attendance_collection.update_one({"_id": _to_object_id(attendance_id)}, {"$set": update_fields})
-    return get_attendance_record(attendance_id)
+    return get_attendance_record(attendance_id, company_id)
 
-def delete_attendance(attendance_id: str) -> dict:
-    get_attendance_record(attendance_id)
+
+def delete_attendance(attendance_id: str, company_id: str) -> dict:
+    get_attendance_record(attendance_id, company_id)
     database.attendance_collection.delete_one({"_id": _to_object_id(attendance_id)})
     return {"message": f"Attendance record '{attendance_id}' deleted successfully"}
 
 
-def _count_weekdays(start: date, end: date) -> int:
-    total_days = (end - start).days + 1
-    return sum(1 for i in range(total_days) if (start + timedelta(days=i)).weekday() < 5)
-
-
+# no company_id scoping needed here — called internally by payroll_controller,
+# which has already verified the employee belongs to the caller's company.
 def get_attendance_summary(emp_id: str, pay_period_start: date, pay_period_end: date) -> dict:
 
-    working_days = _count_weekdays(pay_period_start, pay_period_end)
+    employee = employee_controller.get_employee_or_none(emp_id)
+    weekend_days = (employee["salary_rule"].get("weekend_days") if employee else None) or ["Saturday", "Sunday"]
+    working_days = count_working_days(pay_period_start, pay_period_end, weekend_days)
 
     pipeline = [
-        {
-            "$match": {
-                "emp_id": emp_id,
-                "date": {
-                    "$gte": pay_period_start.isoformat(),
-                    "$lte": pay_period_end.isoformat(),
-                },
-            }
-        },
-        {
-            "$group": {
-                "_id": "$emp_id",
-                "present_days": {"$sum": 1},
-                "overtime_hours": {"$sum": "$overtime_hours"},
-                "late_arrival_hours": {"$sum": "$late_hours"},
-            }
-        },
+        {"$match": {
+            "emp_id": emp_id,
+            "date": {"$gte": pay_period_start.isoformat(), "$lte": pay_period_end.isoformat()},
+        }},
+        {"$group": {
+            "_id": "$status",
+            "count": {"$sum": 1},
+            "overtime_hours": {"$sum": "$overtime_hours"},
+            "late_hours": {"$sum": "$late_hours"},
+        }},
     ]
 
-    result = list(database.attendance_collection.aggregate(pipeline))
+    results = list(database.attendance_collection.aggregate(pipeline))
 
-    if not result:
-        present_days, overtime_hours, late_arrival_hours = 0, 0.0, 0.0
-    else:
-        present_days = result[0]["present_days"]
-        overtime_hours = round(result[0]["overtime_hours"], 2)
-        late_arrival_hours = round(result[0]["late_arrival_hours"], 2)
+    present_days = 0
+    leave_days = 0
+    overtime_hours = 0.0
+    late_arrival_hours = 0.0
 
-    absent_days = max(0, working_days - present_days)
+    for r in results:
+        if r["_id"] == "Present":
+            present_days = r["count"]
+            overtime_hours = round(r["overtime_hours"], 2)
+            late_arrival_hours = round(r["late_hours"], 2)
+        elif r["_id"] == "Leave":
+            leave_days = r["count"]
+
+    absent_days = max(0, working_days - present_days - leave_days)
 
     return {
         "working_days": working_days,
         "present_days": present_days,
+        "leave_days": leave_days,
         "absent_days": absent_days,
         "overtime_hours": overtime_hours,
         "late_arrival_hours": late_arrival_hours,

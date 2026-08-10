@@ -23,8 +23,9 @@ def _get_company_settings_or_none(company_id: str):
         return None
 
 
-def _resolve_attendance_policy(salary_rule: dict, settings: dict | None) -> dict:
-    weekly_days = settings["standard_working_days_per_week"] if settings else 5
+def _resolve_policy(salary_rule: dict, settings: dict | None) -> dict:
+    weekend_days_setting = (settings["weekend_days"] if settings else ["Saturday", "Sunday"])
+    weekly_days = 7 - len(weekend_days_setting)
     computed_monthly_days = round(weekly_days * 52 / 12)
 
     return {
@@ -41,27 +42,28 @@ def _resolve_attendance_policy(salary_rule: dict, settings: dict | None) -> dict
             if salary_rule.get("paid_leaves_allowed_per_month") is not None
             else (settings["paid_leaves_allowed_per_month"] if settings else 2)
         ),
+        "overtime_rate_multiplier": salary_rule.get("overtime_rate_multiplier")
+        or (settings["overtime_rate_multiplier"] if settings else 1.5),
+        "weekend_days": salary_rule.get("weekend_days") or weekend_days_setting,
     }
 
 
-def create_employee(payload: EmployeeCreateRequest) -> dict:
+def create_employee(payload: EmployeeCreateRequest, company_id: str) -> dict:
 
-    company_controller.get_company(payload.company_id)
-    settings = _get_company_settings_or_none(payload.company_id)
+    settings = _get_company_settings_or_none(company_id)
 
     now = datetime.now(timezone.utc).isoformat()
 
     employee_doc = payload.model_dump(mode="json")
+    employee_doc["company_id"] = company_id
     employee_doc["created_at"] = now
     employee_doc["updated_at"] = now
 
-    employee_doc["salary_rule"].update(_resolve_attendance_policy(employee_doc["salary_rule"], settings))
+    employee_doc["salary_rule"].update(_resolve_policy(employee_doc["salary_rule"], settings))
 
-    database.employees_collection.insert_one(employee_doc)  
-
+    database.employees_collection.insert_one(employee_doc)
     employee_doc["emp_id"] = str(employee_doc.pop("_id"))
     return employee_doc
-
 
 def get_employees(
     company_id: str,
@@ -109,82 +111,48 @@ def get_employees(
 
 def update_employee(emp_id: str, payload: EmployeeUpdateRequest) -> dict:
 
-    existing = database.employees_collection.find_one(
-        {"_id": _to_object_id(emp_id)}
-    )
-
-    if existing is None:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Employee '{emp_id}' not found"
-        )
-
-    existing["emp_id"] = str(existing.pop("_id"))
+    existing = get_employee_or_none(emp_id)
+    if existing is None or existing["company_id"] != company_id:
+        raise HTTPException(status_code=404, detail=f"Employee '{emp_id}' not found")
 
     update_fields = {}
-
     if payload.emp_name is not None:
         update_fields["emp_name"] = payload.emp_name
-
     if payload.email is not None:
         update_fields["email"] = payload.email
-
     if payload.profile_image is not None:
         update_fields["profile_image"] = payload.profile_image
-
     if payload.department is not None:
         update_fields["department"] = payload.department.value
-
     if payload.designation is not None:
         update_fields["designation"] = payload.designation
-
     if payload.salary_type is not None:
         update_fields["salary_type"] = payload.salary_type.value
 
+    # THE FIX: merge only the fields actually sent onto the existing salary_rule,
+    # instead of replacing the whole sub-document.
     if payload.salary_rule is not None:
-        update_fields["salary_rule"] = payload.salary_rule.model_dump(mode="json")
+        existing_salary_rule = existing.get("salary_rule", {})
+        changed_fields = payload.salary_rule.model_dump(mode="json", exclude_none=True)
+        update_fields["salary_rule"] = {**existing_salary_rule, **changed_fields}
 
     if payload.deduction_rules is not None:
-        update_fields["deduction_rules"] = [
-            d.model_dump(mode="json") for d in payload.deduction_rules
-        ]
-
+        update_fields["deduction_rules"] = [d.model_dump(mode="json") for d in payload.deduction_rules]
     if payload.allowance_rules is not None:
-        update_fields["allowance_rules"] = [
-            a.model_dump(mode="json") for a in payload.allowance_rules
-        ]
+        update_fields["allowance_rules"] = [a.model_dump(mode="json") for a in payload.allowance_rules]
 
     update_fields["updated_at"] = datetime.now(timezone.utc).isoformat()
 
-    database.employees_collection.update_one(
-        {"_id": _to_object_id(emp_id)},
-        {"$set": update_fields},
-    )
+    database.employees_collection.update_one({"_id": _to_object_id(emp_id)}, {"$set": update_fields})
+    return get_employees(company_id=existing["company_id"],
+    emp_id=emp_id,)
 
-    return get_employees(
-        company_id=existing["company_id"],
-        emp_id=emp_id,
-    )
-
-def delete_employee(emp_id: str) -> dict:
-
-    existing = database.employees_collection.find_one(
-        {"_id": _to_object_id(emp_id)}
-    )
-
-    if existing is None:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Employee '{emp_id}' not found"
-        )
-
-    database.employees_collection.delete_one(
-        {"_id": _to_object_id(emp_id)}
-    )
-
-    return {
-        "message": f"Employee '{emp_id}' deleted successfully"
-    } 
+def delete_employee(emp_id: str, company_id: str) -> dict:
+    existing = get_employee_or_none(emp_id)
+    if existing is None or existing["company_id"] != company_id:
+        raise HTTPException(status_code=404, detail=f"Employee '{emp_id}' not found")
+    database.employees_collection.delete_one({"_id": _to_object_id(emp_id)})
+    return {"message": f"Employee '{emp_id}' deleted successfully"}
     
 def get_employee_or_none(emp_id: str):
     object_id = _to_object_id(emp_id)

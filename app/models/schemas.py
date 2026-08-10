@@ -14,23 +14,13 @@ PERIOD_LENGTH_RULES = {
 
 
 class GeneratePayrollRequest(BaseModel):
-    payroll_type: PayrollCycle = Field(
-        ..., description="Whether this payroll batch is Monthly or Weekly"
-    )
-    pay_period_start: date = Field(..., description="Start date of the pay period")
-    pay_period_end: date = Field(..., description="End date of the pay period")
-    emp_type: SalaryType = Field(
-        ..., description="Employee salary type this payroll run applies to"
-    )
-    company_id: Optional[str] = Field(
-        None, description="Optional filter — only include employees from this company"
-    )
-    department: Optional[Department] = Field(
-        None, description="Optional filter — only include employees from this department"
-    )
-    employee_ids: List[str] = Field(
-        ..., min_length=1, description="List of employee IDs to include in this payroll run"
-    )
+    payroll_type: PayrollCycle = Field(...)
+    pay_period_start: date = Field(...)
+    pay_period_end: date = Field(...)
+    emp_type: SalaryType = Field(...)
+   
+    department: Optional[Department] = Field(None)
+    employee_ids: List[str] = Field(..., min_length=1)
 
     @model_validator(mode="after")
     def validate_period_matches_payroll_type(self):
@@ -58,11 +48,12 @@ class PayrollComponent(BaseModel):
 class AttendanceSummary(BaseModel):
     working_days: int
     present_days: int
+    leave_days: int
     absent_days: int
     paid_leaves_allowed: int
     overtime_hours: float
     late_arrival_hours: float
-
+    
 class EmployeePayroll(BaseModel):
     emp_id: str
     emp_name: str

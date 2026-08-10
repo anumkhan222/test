@@ -63,13 +63,15 @@ class CompanySettingsCreateRequest(BaseModel):
     )
     allow_overtime: bool = Field(True, description="Whether this company pays overtime at all")
     overtime_rate_multiplier: float = Field(1.5, description="Overtime pay multiplier, e.g. 1.5x hourly rate")
-    standard_working_days_per_week: int = Field(5, description="e.g. 5 for Mon-Fri, 6 if Saturdays are working days")
     standard_working_hours_per_day: float = Field(8, description="Standard shift length in hours")
     standard_clock_in: str = Field("09:00", description="Default expected clock-in time, 24hr HH:MM")
     standard_clock_out: str = Field("18:00", description="Default expected clock-out time, 24hr HH:MM")
     weekend_days: List[str] = Field(
         default_factory=lambda: ["Saturday", "Sunday"],
-        description="Days of the week not counted as working days",
+        description="Days of the week not counted as working days. "
+        "This alone determines the company's working-days-per-week (e.g. 1 "
+        "weekend day = 6 working days, 2 = 5 working days) — there is no "
+        "separate 'days per week' setting to avoid the two disagreeing.",
     )
     paid_leaves_allowed_per_month: int = Field(2, description="Default paid leave allowance per employee per month")
     late_arrival_grace_minutes: int = Field(
@@ -79,14 +81,13 @@ class CompanySettingsCreateRequest(BaseModel):
         PayrollCycle.MONTHLY,
         description="Default payroll cycle"
     )
-
-
+    
 #request model to update company settings
+
 class CompanySettingsUpdateRequest(BaseModel):
     salary_payment_day: Optional[int] = Field(None, ge=1, le=31)
     allow_overtime: Optional[bool] = None
     overtime_rate_multiplier: Optional[float] = None
-    standard_working_days_per_week: Optional[int] = None
     standard_working_hours_per_day: Optional[float] = None
     standard_clock_in: Optional[str] = None
     standard_clock_out: Optional[str] = None
@@ -102,7 +103,6 @@ class CompanySettingsResponse(BaseModel):
     salary_payment_day: int
     allow_overtime: bool
     overtime_rate_multiplier: float
-    standard_working_days_per_week: int
     standard_working_hours_per_day: float
     standard_clock_in: str
     standard_clock_out: str

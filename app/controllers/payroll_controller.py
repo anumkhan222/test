@@ -17,19 +17,30 @@ def _to_object_id(payroll_batch_id: str) -> ObjectId:
         raise HTTPException(status_code=400, detail=f"'{payroll_batch_id}' is not a valid payroll_batch_id")
 
 
-def generate_payroll(request: GeneratePayrollRequest) -> dict:
+def _has_existing_payroll(emp_id: str, payroll_type_value: str, start, end) -> bool:
+    query = {
+        "payroll_type": payroll_type_value,
+        "pay_period.start": {"$lte": end.isoformat()},
+        "pay_period.end": {"$gte": start.isoformat()},
+        "employees_payroll.emp_id": emp_id,
+    }
+    return database.payrolls_collection.find_one(query) is not None
+
+
+def generate_payroll(request: GeneratePayrollRequest, company_id: str) -> dict:
 
     employees_payroll = []
     skipped_employees = []
 
     emp_type_value = getattr(request.emp_type, "value", request.emp_type)
+    payroll_type_value = getattr(request.payroll_type, "value", request.payroll_type)
     department_value = getattr(request.department, "value", request.department) if request.department else None
 
     for emp_id in request.employee_ids:
         employee = employee_controller.get_employee_or_none(emp_id)
 
-        if employee is None:
-            skipped_employees.append({"emp_id": emp_id, "reason": "Employee not found"})
+        if employee is None or employee["company_id"] != company_id:
+            skipped_employees.append({"emp_id": emp_id, "reason": "Employee not found in your company"})
             continue
 
         if employee["salary_type"] != emp_type_value:
@@ -37,14 +48,6 @@ def generate_payroll(request: GeneratePayrollRequest) -> dict:
                 "emp_id": emp_id,
                 "reason": f"Employee salary_type is '{employee['salary_type']}', "
                 f"does not match requested emp_type '{emp_type_value}'",
-            })
-            continue
-
-        if request.company_id and employee["company_id"] != request.company_id:
-            skipped_employees.append({
-                "emp_id": emp_id,
-                "reason": f"Employee belongs to company '{employee['company_id']}', "
-                f"does not match requested company_id filter '{request.company_id}'",
             })
             continue
 
@@ -56,12 +59,17 @@ def generate_payroll(request: GeneratePayrollRequest) -> dict:
             })
             continue
 
+        if _has_existing_payroll(emp_id, payroll_type_value, request.pay_period_start, request.pay_period_end):
+            skipped_employees.append({
+                "emp_id": emp_id,
+                "reason": "Payroll already generated for this employee for an overlapping pay period",
+            })
+            continue
+
         attendance = attendance_controller.get_attendance_summary(
             emp_id, request.pay_period_start, request.pay_period_end
         )
 
-        # No attendance marked at all for this pay period refuse to generate
-        # a payslip off zero data rather than producing a near-zero/negative one.
         if attendance["present_days"] == 0:
             skipped_employees.append({
                 "emp_id": emp_id,
@@ -79,6 +87,7 @@ def generate_payroll(request: GeneratePayrollRequest) -> dict:
         )
 
     response = {
+        "company_id": company_id,
         "payroll_type": request.payroll_type,
         "pay_period": {
             "start": str(request.pay_period_start),
@@ -96,9 +105,15 @@ def generate_payroll(request: GeneratePayrollRequest) -> dict:
     return response
 
 
-def get_payroll_batch(payroll_batch_id: str) -> dict:
+def get_payroll_batch(payroll_batch_id: str, company_id: str) -> dict:
     doc = database.payrolls_collection.find_one({"_id": _to_object_id(payroll_batch_id)})
-    if not doc:
+    if not doc or doc.get("company_id") != company_id:
         raise HTTPException(status_code=404, detail="Payroll batch not found")
     doc["payroll_batch_id"] = str(doc.pop("_id"))
     return doc
+
+
+def delete_payroll_batch(payroll_batch_id: str, company_id: str) -> dict:
+    get_payroll_batch(payroll_batch_id, company_id)
+    database.payrolls_collection.delete_one({"_id": _to_object_id(payroll_batch_id)})
+    return {"message": f"Payroll batch '{payroll_batch_id}' deleted successfully"}
