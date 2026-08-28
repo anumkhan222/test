@@ -4,5 +4,6 @@ services:
     ports:
       - "8001:8000"
     environment:
-      PORT: 8000
+      MONGO_URI: ${MONGO_URI}
+      DB_NAME: ${DB_NAME:-employeesystem}
     restart: unless-stopped
