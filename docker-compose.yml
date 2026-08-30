@@ -1,9 +1,0 @@
-services:
-  app:
-    build: .
-    ports:
-      - "8001:8000"
-    environment:
-      MONGO_URI: ${MONGO_URI}
-      DB_NAME: ${DB_NAME:-employeesystem}
-    restart: unless-stopped
