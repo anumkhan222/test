@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Payroll API Console</title>
+<style>
+  :root{
+    --bg:#0F1216;
+    --panel:#161B21;
+    --panel-2:#1D232B;
+    --border:#262E38;
+    --text:#E7EAEE;
+    --muted:#8891A0;
+    --accent:#7C8CF8;
+    --accent-soft:rgba(124,140,248,0.14);
+    --get:#5EC8F2;
+    --post:#4ADE80;
+    --put:#FBBF24;
+    --delete:#F87171;
+    --success:#34D399;
+    --warn:#FBBF24;
+    --danger:#F87171;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:var(--sans);}
+  body{display:grid;grid-template-rows:auto 1fr 260px;height:100vh;overflow:hidden;}
+
+  /* ===== Topbar ===== */
+  header{
+    display:flex;align-items:center;gap:20px;
+    padding:12px 20px;background:var(--panel);border-bottom:1px solid var(--border);
+    flex-wrap:wrap;
+  }
+  .brand{display:flex;align-items:center;gap:10px;font-family:var(--mono);font-weight:700;letter-spacing:.5px;}
+  .brand .dot{width:9px;height:9px;border-radius:50%;background:var(--accent);box-shadow:0 0 8px var(--accent);}
+  .brand small{color:var(--muted);font-weight:400;font-family:var(--sans);margin-left:4px;}
+  .field-inline{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted);}
+  .field-inline input{
+    background:var(--panel-2);border:1px solid var(--border);color:var(--text);
+    padding:6px 9px;border-radius:6px;font-family:var(--mono);font-size:12.5px;width:230px;
+  }
+  .session{margin-left:auto;display:flex;align-items:center;gap:12px;font-size:12.5px;}
+  .session-chip{
+    display:flex;align-items:center;gap:8px;background:var(--panel-2);border:1px solid var(--border);
+    padding:7px 12px;border-radius:20px;
+  }
+  .session-chip .led{width:8px;height:8px;border-radius:50%;background:#525A66;}
+  .session-chip.on .led{background:var(--success);box-shadow:0 0 6px var(--success);}
+  .btn{
+    background:var(--accent);color:#0F1216;border:none;padding:7px 14px;border-radius:6px;
+    font-weight:600;font-size:12.5px;cursor:pointer;font-family:var(--sans);
+  }
+  .btn:hover{filter:brightness(1.08);}
+  .btn.ghost{background:transparent;border:1px solid var(--border);color:var(--text);}
+  .btn.ghost:hover{border-color:var(--accent);color:var(--accent);}
+  .btn.small{padding:4px 10px;font-size:11.5px;}
+
+  /* ===== Body layout ===== */
+  .layout{display:grid;grid-template-columns:250px 1fr;overflow:hidden;}
+  nav{background:var(--panel);border-right:1px solid var(--border);overflow-y:auto;padding:14px 0;}
+  nav .section-label{
+    font-family:var(--mono);font-size:10.5px;letter-spacing:1.2px;color:var(--muted);
+    padding:14px 18px 6px;text-transform:uppercase;
+  }
+  nav .item{
+    display:flex;align-items:center;gap:9px;padding:8px 18px;cursor:pointer;font-size:13px;
+    color:var(--text);border-left:2px solid transparent;
+  }
+  nav .item:hover{background:var(--panel-2);}
+  nav .item.active{background:var(--accent-soft);border-left-color:var(--accent);color:var(--accent);}
+  nav .item .m{
+    font-family:var(--mono);font-size:9.5px;font-weight:700;width:38px;flex:none;
+    padding:2px 0;text-align:center;border-radius:4px;
+  }
+  .m-GET{color:var(--get);}
+  .m-POST{color:var(--post);}
+  .m-PUT{color:var(--put);}
+  .m-DELETE{color:var(--delete);}
+
+  main{overflow-y:auto;padding:24px 30px 40px;}
+  .panel-title{display:flex;align-items:center;gap:12px;margin-bottom:4px;flex-wrap:wrap;}
+  .panel-title h1{font-size:17px;margin:0;font-weight:600;}
+  .lock{font-size:11px;color:var(--muted);border:1px solid var(--border);padding:2px 8px;border-radius:10px;}
+  .route{
+    font-family:var(--mono);font-size:13px;color:var(--muted);margin:6px 0 22px;
+    display:flex;align-items:center;gap:10px;
+  }
+  .route .badge{
+    font-weight:700;font-size:11px;padding:3px 8px;border-radius:4px;background:var(--panel-2);
+    border:1px solid var(--border);
+  }
+  .badge.GET{color:var(--get);}
+  .badge.POST{color:var(--post);}
+  .badge.PUT{color:var(--put);}
+  .badge.DELETE{color:var(--delete);}
+
+  .grid-params{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;margin-bottom:16px;}
+  label.field-label{display:block;font-size:11.5px;color:var(--muted);margin-bottom:5px;font-family:var(--mono);}
+  input.param-input{
+    width:100%;background:var(--panel-2);border:1px solid var(--border);color:var(--text);
+    padding:9px 10px;border-radius:6px;font-family:var(--mono);font-size:13px;
+  }
+  input.param-input:focus, textarea.body-editor:focus{outline:1px solid var(--accent);border-color:var(--accent);}
+  textarea.body-editor{
+    width:100%;min-height:220px;background:var(--panel-2);border:1px solid var(--border);color:var(--text);
+    padding:14px;border-radius:8px;font-family:var(--mono);font-size:12.5px;line-height:1.6;resize:vertical;
+  }
+  .send-row{display:flex;align-items:center;gap:12px;margin-top:16px;}
+  .hint{font-size:12px;color:var(--muted);}
+
+  /* ===== Console / log ===== */
+  .console{
+    background:#0B0D10;border-top:1px solid var(--border);overflow-y:auto;
+    font-family:var(--mono);font-size:12px;padding:0;
+  }
+  .console-head{
+    position:sticky;top:0;background:#12151A;border-bottom:1px solid var(--border);
+    padding:8px 18px;display:flex;align-items:center;justify-content:space-between;color:var(--muted);
+    font-family:var(--sans);font-size:11.5px;letter-spacing:.4px;text-transform:uppercase;
+  }
+  .log-entry{border-bottom:1px solid #1A1F26;padding:10px 18px;}
+  .log-top{display:flex;align-items:center;gap:10px;cursor:pointer;}
+  .log-top .status{font-weight:700;padding:1px 7px;border-radius:4px;font-size:11px;}
+  .status.ok{color:var(--success);background:rgba(52,211,153,.12);}
+  .status.err{color:var(--danger);background:rgba(248,113,113,.12);}
+  .log-top .path{color:var(--text);}
+  .log-top .time{margin-left:auto;color:var(--muted);font-size:11px;}
+  .log-body{margin-top:8px;background:var(--panel-2);border:1px solid var(--border);border-radius:6px;padding:10px 12px;white-space:pre-wrap;word-break:break-word;color:#C9CED6;display:none;}
+  .log-entry.open .log-body{display:block;}
+  .empty-log{padding:30px;color:var(--muted);text-align:center;font-family:var(--sans);}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand"><span class="dot"></span>PAYROLL·API<small>console</small></div>
+  <div class="field-inline">
+    <span>Base URL</span>
+    <input id="baseUrl" value="">
+  </div>
+  <button class="btn ghost small" onclick="pingHealth()">Test connection</button>
+  <div class="session">
+    <div class="session-chip" id="sessionChip"><span class="led"></span><span id="sessionText">Not logged in</span></div>
+    <button class="btn ghost small" onclick="clearSession()">Clear session</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav id="nav"></nav>
+  <main id="main"></main>
+</div>
+
+<div class="console">
+  <div class="console-head">
+    <span>Request log</span>
+    <button class="btn ghost small" onclick="clearLog()">Clear log</button>
+  </div>
+  <div id="log"><div class="empty-log">No requests yet — send one from the panel above.</div></div>
+</div>
+
+<script>
+/* ============ STATE ============ */
+const state = { token: "", user: null };
+
+/* ============ ENDPOINT DEFINITIONS ============ */
+const SECTIONS = [
+  { name: "Auth", items: [
+    { id:"auth-otp", name:"Send Registration OTP", method:"POST", path:"/api/auth/send-registration-otp", auth:false,
+      body:{ email:"test@example.com" } },
+    { id:"auth-register", name:"Register", method:"POST", path:"/api/auth/register", auth:false,
+      body:{ full_name:"Ali Khan", username:"alikhan", email:"test@example.com", password:"StrongPass123", otp:"123456" },
+      onSuccess:(data)=>{ if(data.access_token){ state.token=data.access_token; state.user=data.user; updateSession(); } } },
+    { id:"auth-login", name:"Login", method:"POST", path:"/api/auth/login", auth:false,
+      body:{ email:"test@example.com", password:"StrongPass123" },
+      onSuccess:(data)=>{ if(data.access_token){ state.token=data.access_token; state.user=data.user; updateSession(); } } },
+    { id:"auth-logout", name:"Logout", method:"POST", path:"/api/auth/logout", auth:true },
+    { id:"auth-forgot", name:"Forgot Password", method:"POST", path:"/api/auth/forgot-password", auth:false,
+      body:{ email:"test@example.com" } },
+    { id:"auth-reset", name:"Reset Password", method:"POST", path:"/api/auth/reset-password", auth:false,
+      body:{ email:"test@example.com", otp:"123456", new_password:"NewStrongPass123", confirm_password:"NewStrongPass123" } },
+  ]},
+  { name:"Company", items:[
+    { id:"co-create", name:"Create Company", method:"POST", path:"/api/companies/", auth:true,
+      body:{ logo_url:null, business_name:"Leadsoftwares", business_type:"Information Technology",
+             business_size:"1-50 employees", about:"A software company", business_email:"leads@example.com",
+             phone_country_code:"+1", phone_number:"5551234567", business_url:"leadsoftware.com",
+             social_links:{ twitter:"Leadsoftwares8789", facebook:"Leadsoftwares8789", linkedin:"Leadsoftwares8789" } },
+      onSuccess:(data)=>{ if(state.user){ state.user.company_id = data.company_id; updateSession(); } } },
+    { id:"co-get", name:"Get Company", method:"GET", path:"/api/companies/{company_id}", auth:true, pathParams:["company_id"] },
+    { id:"co-update", name:"Update Company", method:"PUT", path:"/api/companies/{company_id}", auth:true, pathParams:["company_id"],
+      body:{ about:"Updated description" } },
+    { id:"co-delete", name:"Delete Company", method:"DELETE", path:"/api/companies/{company_id}", auth:true, pathParams:["company_id"] },
+  ]},
+  { name:"Company Settings", items:[
+    { id:"set-create", name:"Create Settings", method:"POST", path:"/api/companies/{company_id}/settings/", auth:true, pathParams:["company_id"],
+      body:{ salary_payment_day:28, allow_overtime:true, overtime_rate_multiplier:1.5, standard_working_hours_per_day:8,
+             standard_clock_in:"09:00", standard_clock_out:"18:00", weekend_days:["Saturday","Sunday"],
+             paid_leaves_allowed_per_month:2, late_arrival_grace_minutes:0, default_payroll_cycle:"Monthly" } },
+    { id:"set-get", name:"Get Settings", method:"GET", path:"/api/companies/{company_id}/settings/", auth:true, pathParams:["company_id"] },
+    { id:"set-update", name:"Update Settings", method:"PUT", path:"/api/companies/{company_id}/settings/", auth:true, pathParams:["company_id"],
+      body:{ overtime_rate_multiplier:1.75 } },
+    { id:"set-delete", name:"Delete Settings", method:"DELETE", path:"/api/companies/{company_id}/settings/", auth:true, pathParams:["company_id"] },
+  ]},
+  { name:"Employee", items:[
+    { id:"emp-create", name:"Create Employee", method:"POST", path:"/api/employees/", auth:true,
+      body:{ emp_name:"Ali Khan", email:"ali.khan@example.com", profile_image:null, department:"Frontend",
+             designation:"Frontend Developer", salary_type:"Monthly",
+             salary_rule:{ base_salary:3500, pay_period:"Monthly", payment_method:"Bank Transfer", currency:"USD",
+                           include_allowance_and_overtime_in_payroll:true },
+             deduction_rules:[ {deduction_type:"Income Tax", amount_type:"Percentage", amount:10},
+                                {deduction_type:"UIF", amount_type:"Fixed", amount:50} ],
+             allowance_rules:[ {allowance_type:"Transport", amount_type:"Fixed", amount:150},
+                                {allowance_type:"Meal", amount_type:"Fixed", amount:100} ] } },
+    { id:"emp-list", name:"List / Get Employees", method:"GET", path:"/api/employees/", auth:true,
+      queryParams:["emp_id"] },
+    { id:"emp-update", name:"Update Employee", method:"PUT", path:"/api/employees/{emp_id}", auth:true, pathParams:["emp_id"],
+      body:{ salary_rule:{ base_salary:4000 } } },
+    { id:"emp-delete", name:"Delete Employee", method:"DELETE", path:"/api/employees/{emp_id}", auth:true, pathParams:["emp_id"] },
+  ]},
+  { name:"Attendance", items:[
+    { id:"att-mark", name:"Mark Attendance", method:"POST", path:"/api/attendance/", auth:true,
+      body:{ emp_id:"PASTE_EMP_ID", date:"2026-08-20", status:"Present",
+             clock_sessions:[ {clock_in:"09:00", clock_out:"18:00"} ] } },
+    { id:"att-bulk", name:"Bulk Mark Attendance", method:"POST", path:"/api/attendance/bulk", auth:true,
+      body:{ date:"2026-08-20", records:[
+             { emp_id:"PASTE_EMP_ID", status:"Present", clock_sessions:[{clock_in:"09:00", clock_out:"18:00"}] } ] } },
+    { id:"att-list", name:"List Attendance", method:"GET", path:"/api/attendance/", auth:true,
+      queryParams:["emp_id","start","end"] },
+    { id:"att-get", name:"Get Attendance", method:"GET", path:"/api/attendance/{attendance_id}", auth:true, pathParams:["attendance_id"] },
+    { id:"att-update", name:"Update Attendance", method:"PUT", path:"/api/attendance/{attendance_id}", auth:true, pathParams:["attendance_id"],
+      body:{ status:"Leave", clock_sessions:[] } },
+    { id:"att-delete", name:"Delete Attendance", method:"DELETE", path:"/api/attendance/{attendance_id}", auth:true, pathParams:["attendance_id"] },
+  ]},
+  { name:"Payroll", items:[
+    { id:"pay-generate", name:"Generate Payroll", method:"POST", path:"/api/payroll/generate", auth:true,
+      body:{ payroll_type:"Monthly", pay_period_start:"2026-08-01", pay_period_end:"2026-08-31",
+             emp_type:"Monthly", department:"Frontend", employee_ids:["PASTE_EMP_ID"] } },
+    { id:"pay-get", name:"Get Payroll Batch", method:"GET", path:"/api/payroll/{payroll_batch_id}", auth:true, pathParams:["payroll_batch_id"] },
+    { id:"pay-delete", name:"Delete Payroll Batch", method:"DELETE", path:"/api/payroll/{payroll_batch_id}", auth:true, pathParams:["payroll_batch_id"] },
+  ]},
+];
+
+/* flatten for quick lookup */
+const ALL_ACTIONS = {};
+SECTIONS.forEach(s => s.items.forEach(i => ALL_ACTIONS[i.id] = i));
+
+/* ============ NAV ============ */
+const nav = document.getElementById("nav");
+SECTIONS.forEach(section => {
+  const label = document.createElement("div");
+  label.className = "section-label";
+  label.textContent = section.name;
+  nav.appendChild(label);
+  section.items.forEach(action => {
+    const item = document.createElement("div");
+    item.className = "item";
+    item.id = "nav-" + action.id;
+    item.innerHTML = `<span class="m m-${action.method}">${action.method}</span><span>${action.name}</span>`;
+    item.onclick = () => selectAction(action.id);
+    nav.appendChild(item);
+  });
+});
+
+let currentActionId = null;
+
+function selectAction(id){
+  currentActionId = id;
+  document.querySelectorAll("nav .item").forEach(el => el.classList.remove("active"));
+  document.getElementById("nav-" + id).classList.add("active");
+  renderPanel(ALL_ACTIONS[id]);
+}
+
+/* ============ FORM PANEL ============ */
+function renderPanel(action){
+  const main = document.getElementById("main");
+  let html = `
+    <div class="panel-title"><h1>${action.name}</h1>${action.auth ? '<span class="lock">🔒 requires token</span>' : ''}</div>
+    <div class="route"><span class="badge ${action.method}">${action.method}</span>${action.path}</div>
+  `;
+
+  const params = [...(action.pathParams||[]), ...(action.queryParams||[])];
+  if(params.length){
+    html += `<div class="grid-params">`;
+    (action.pathParams||[]).forEach(p => {
+      html += `<div><label class="field-label">path · ${p}</label><input class="param-input" id="p_${p}" placeholder="${p}"></div>`;
+    });
+    (action.queryParams||[]).forEach(p => {
+      html += `<div><label class="field-label">query · ${p}</label><input class="param-input" id="q_${p}" placeholder="${p} (optional)"></div>`;
+    });
+    html += `</div>`;
+  }
+
+  if(action.body !== undefined){
+    html += `<label class="field-label">JSON body</label>
+      <textarea class="body-editor" id="bodyEditor">${JSON.stringify(action.body, null, 2)}</textarea>`;
+  }
+
+  html += `
+    <div class="send-row">
+      <button class="btn" onclick="sendRequest()">Send request</button>
+      <span class="hint">${action.auth ? "Authorization: Bearer &lt;token&gt; will be attached automatically" : "No authentication required"}</span>
+    </div>
+  `;
+  main.innerHTML = html;
+}
+
+/* ============ SENDING ============ */
+async function sendRequest(){
+  const action = ALL_ACTIONS[currentActionId];
+  if(!action) return;
+
+  let path = action.path;
+  for(const p of (action.pathParams||[])){
+    const val = document.getElementById("p_"+p).value.trim();
+    if(!val){ alert(`Path parameter "${p}" is required.`); return; }
+    path = path.replace(`{${p}}`, encodeURIComponent(val));
+  }
+
+  let query = "";
+  const qParts = [];
+  for(const p of (action.queryParams||[])){
+    const val = document.getElementById("q_"+p).value.trim();
+    if(val) qParts.push(`${p}=${encodeURIComponent(val)}`);
+  }
+  if(qParts.length) query = "?" + qParts.join("&");
+
+  let bodyPayload = undefined;
+  if(action.body !== undefined){
+    const raw = document.getElementById("bodyEditor").value;
+    try{ bodyPayload = JSON.parse(raw); }
+    catch(e){ alert("Body is not valid JSON:\n" + e.message); return; }
+  }
+
+  const baseUrl = document.getElementById("baseUrl").value.replace(/\/$/,"");
+  const url = baseUrl + path + query;
+
+  const headers = { "Content-Type":"application/json" };
+  if(action.auth){
+    if(!state.token){ if(!confirm("No token stored yet — send this request without Authorization anyway?")) return; }
+    else headers["Authorization"] = "Bearer " + state.token;
+  }
+
+  const startedAt = performance.now();
+  let res, data, ok, statusText;
+  try{
+    res = await fetch(url, {
+      method: action.method,
+      headers,
+      body: bodyPayload !== undefined ? JSON.stringify(bodyPayload) : undefined,
+    });
+    ok = res.ok;
+    statusText = res.status + " " + res.statusText;
+    try{ data = await res.json(); } catch(e){ data = await res.text(); }
+  } catch(err){
+    ok = false; statusText = "Network error";
+    data = { error: err.message, hint: "Check the base URL, that the server is running, and that CORS is enabled." };
+  }
+  const duration = Math.round(performance.now() - startedAt);
+
+  if(ok && action.onSuccess){ try{ action.onSuccess(data); } catch(e){} }
+
+  logRequest(action, path + query, ok, statusText, data, duration);
+}
+
+/* ============ SESSION ============ */
+function updateSession(){
+  const chip = document.getElementById("sessionChip");
+  const text = document.getElementById("sessionText");
+  if(state.token){
+    chip.classList.add("on");
+    const email = state.user ? state.user.email : "unknown";
+    const co = state.user && state.user.company_id ? state.user.company_id : "none — create one";
+    text.textContent = `${email} · company: ${co}`;
+  } else {
+    chip.classList.remove("on");
+    text.textContent = "Not logged in";
+  }
+}
+function clearSession(){
+  state.token = ""; state.user = null; updateSession();
+}
+
+async function pingHealth(){
+  const baseUrl = document.getElementById("baseUrl").value.replace(/\/$/,"");
+  const started = performance.now();
+  try{
+    const res = await fetch(baseUrl + "/api");
+    const data = await res.json();
+    logRequest({name:"Health check", method:"GET"}, "/api", res.ok, res.status+" "+res.statusText, data, Math.round(performance.now()-started));
+  }catch(e){
+    logRequest({name:"Health check", method:"GET"}, "/api", false, "Network error", {error:e.message}, Math.round(performance.now()-started));
+  }
+}
+
+/* ============ LOG ============ */
+function logRequest(action, path, ok, statusText, data, duration){
+  const log = document.getElementById("log");
+  const empty = log.querySelector(".empty-log");
+  if(empty) empty.remove();
+
+  const entry = document.createElement("div");
+  entry.className = "log-entry";
+  const time = new Date().toLocaleTimeString();
+  entry.innerHTML = `
+    <div class="log-top">
+      <span class="status ${ok ? 'ok':'err'}">${statusText}</span>
+      <span class="m m-${action.method}">${action.method}</span>
+      <span class="path">${path}</span>
+      <span class="time">${time} · ${duration}ms</span>
+    </div>
+    <div class="log-body">${escapeHtml(JSON.stringify(data, null, 2))}</div>
+  `;
+  entry.querySelector(".log-top").onclick = () => entry.classList.toggle("open");
+  entry.classList.add("open");
+  log.prepend(entry);
+}
+function clearLog(){
+  document.getElementById("log").innerHTML = `<div class="empty-log">No requests yet — send one from the panel above.</div>`;
+}
+function escapeHtml(str){
+  return str.replace(/[&<>]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;" }[c]));
+}
+
+/* ============ INIT ============ */
+(function initBaseUrl(){
+  const bu = document.getElementById("baseUrl");
+  if(!bu.value){
+    // Same-origin when this page is served by the FastAPI app itself (production/Dokploy).
+    // Falls back to localhost when opened directly as a file (window.location.origin is "null" or "file://").
+    const origin = window.location.origin;
+    bu.value = (origin && origin !== "null" && !origin.startsWith("file:")) ? origin : "http://127.0.0.1:8000";
+  }
+})();
+selectAction("auth-otp");
+updateSession();
+</script>
+</body>
+</html>

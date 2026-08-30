@@ -16,6 +16,9 @@ app.include_router(attendance.router)
 app.include_router(payroll.router)
 
 
-@app.get("/")
-def root():
-    return {"message": "Payroll Payload Generation API is running. "}
+@app.get("/api")
+def api_root():
+    return {"message": "Payroll Payload Generation API is running."}
+
+STATIC_DIR = Path(__file__).parent / "static"
+app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
