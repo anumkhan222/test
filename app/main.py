@@ -1,5 +1,7 @@
-from fastapi import FastAPI
 from pathlib import Path
+
+from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from app.routers import payroll, company,employee,attendance,auth
 app = FastAPI(
     title="Payroll Payload Generation API",
